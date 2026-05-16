@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>ACR Drilling 360 Viewer</title>
+
+<style>
+
+
+.viewer-wrapper{
+    width:100%;
+    max-width:1200px;
+}
+
+.viewer-title{
+    font-size:32px;
+    font-weight:700;
+    margin-bottom:20px;
+}
+
+.viewer-container{
+    position:relative;
+    width:100%;
+    aspect-ratio:16/9;
+    overflow:hidden;
+    border-radius:20px;
+    background:#181c23;
+    cursor:grab;
+    user-select:none;
+    box-shadow:
+        0 10px 40px rgba(0,0,0,0.4);
+}
+
+.viewer-container:active{
+    cursor:grabbing;
+}
+
+.viewer-image{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    pointer-events:none;
+}
+
+.loading{
+    position:absolute;
+    inset:0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    font-size:18px;
+    background:#181c23;
+    z-index:5;
+}
+
+.controls{
+    margin-top:20px;
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
+.btnyedek{
+    padding:12px 18px;
+    border:none;
+    border-radius:12px;
+    background:#232933;
+    color:white;
+    cursor:pointer;
+    transition:.3s;
+    font-weight:600;
+}
+
+.btnyedek:hover{
+    transform:translateY(-2px);
+}
+
+.info{
+    margin-top:15px;
+    opacity:.7;
+    font-size:14px;
+}
+
+.rotate-icon{
+    position:absolute;
+    bottom:20px;
+    right:20px;
+    width:60px;
+    height:60px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.08);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    backdrop-filter:blur(10px);
+    animation:spin 4s linear infinite;
+}
+
+@keyframes spin{
+    from{ transform:rotate(0deg); }
+    to{ transform:rotate(360deg); }
+}
+
+@media(max-width:768px){
+
+    .viewer-title{
+        font-size:24px;
+    }
+
+    .controls{
+        justify-content:center;
+    }
+
+}
+
+</style>
+</head>
+<body>
+
+<div class="viewer-wrapper">
+
+    <h1 class="viewer-title">
+        ACR H500 360° Ürün Görünümü
+    </h1>
+
+    <div class="viewer-container" id="viewer">
+
+        <div class="loading" id="loading">
+            Görseller yükleniyor...
+        </div>
+
+        <img
+            id="viewerImage"
+            class="viewer-image"
+            src=""
+            alt="360 Viewer"
+            draggable="false"
+        >
+
+        <div class="rotate-icon">
+            ↻
+        </div>
+
+    </div>
+
+    <div class="controls">
+        <button class="btnyedek" id="playBtn">
+            Auto Rotate
+        </button>
+
+        <button class="btnyedek" id="stopBtn">
+            Stop
+        </button>
+    </div>
+
+    <div class="info">
+        Masaüstünde sürükleyin • Mobilde kaydırın
+    </div>
+
+</div>
+
+<script>
+
+const totalFrames = 15; // kaç görsel varsa yaz
+
+const supportedFormats = ["jpg", "jpeg", "png", "webp"];
+
+const images = [];
+
+let loadedImages = 0;
+
+// RESİMLERİ BUL
+
+async function findImages(){
+
+    for(let i = 1; i <= totalFrames; i++){
+
+        let found = false;
+
+        for(let ext of supportedFormats){
+
+            const path = `images/h500/frame_${i}.${ext}`;
+
+            const exists = await imageExists(path);
+
+            if(exists){
+
+                images.push(path);
+
+                found = true;
+
+                break;
+
+            }
+
+        }
+
+        if(!found){
+
+            console.warn(`frame_${i} bulunamadı`);
+
+        }
+
+    }
+
+    preloadImages();
+
+}
+
+// DOSYA VAR MI KONTROL
+
+function imageExists(src){
+
+    return new Promise(resolve => {
+
+        const img = new Image();
+
+        img.onload = () => resolve(true);
+
+        img.onerror = () => resolve(false);
+
+        img.src = src;
+
+    });
+
+}
+
+// PRELOAD
+
+function preloadImages(){
+
+    images.forEach(src => {
+
+        const img = new Image();
+
+        img.src = src;
+
+        img.onload = () => {
+
+            loadedImages++;
+
+            if(loadedImages === images.length){
+
+                loading.style.display = "none";
+
+                updateImage();
+
+                startAutoRotate();
+
+            }
+
+        };
+
+    });
+
+}
+
+// ELEMENTLER
+
+const viewerImage = document.getElementById("viewerImage");
+const viewer = document.getElementById("viewer");
+const loading = document.getElementById("loading");
+
+let currentFrame = 0;
+
+let isDragging = false;
+
+let startX = 0;
+
+let rotateInterval;
+
+// GÖRSEL GÜNCELLE
+
+function updateImage(){
+
+    viewerImage.src = images[currentFrame];
+
+}
+
+// FRAME DEĞİŞTİR
+
+function nextFrame(direction){
+
+    currentFrame += direction;
+
+    if(currentFrame >= images.length){
+        currentFrame = 0;
+    }
+
+    if(currentFrame < 0){
+        currentFrame = images.length - 1;
+    }
+
+    updateImage();
+
+}
+
+// MOUSE
+
+viewer.addEventListener("mousedown", e => {
+
+    isDragging = true;
+
+    startX = e.pageX;
+
+    stopAutoRotate();
+
+});
+
+window.addEventListener("mousemove", e => {
+
+    if(!isDragging) return;
+
+    let diff = e.pageX - startX;
+
+    if(Math.abs(diff) > 8){
+
+        if(diff > 0){
+
+            nextFrame(-1);
+
+        }else{
+
+            nextFrame(1);
+
+        }
+
+        startX = e.pageX;
+
+    }
+
+});
+
+window.addEventListener("mouseup", () => {
+
+    isDragging = false;
+
+});
+
+// TOUCH
+
+viewer.addEventListener("touchstart", e => {
+
+    startX = e.touches[0].clientX;
+
+    stopAutoRotate();
+
+});
+
+viewer.addEventListener("touchmove", e => {
+
+    let diff = e.touches[0].clientX - startX;
+
+    if(Math.abs(diff) > 8){
+
+        if(diff > 0){
+
+            nextFrame(-1);
+
+        }else{
+
+            nextFrame(1);
+
+        }
+
+        startX = e.touches[0].clientX;
+
+    }
+
+});
+
+// AUTO ROTATE
+
+function startAutoRotate(){
+
+    rotateInterval = setInterval(() => {
+
+        nextFrame(1);
+
+    }, 120);
+
+}
+
+function stopAutoRotate(){
+
+    clearInterval(rotateInterval);
+
+}
+
+// BUTTONS
+
+document.getElementById("playBtn").addEventListener("click", () => {
+
+    stopAutoRotate();
+
+    startAutoRotate();
+
+});
+
+document.getElementById("stopBtn").addEventListener("click", () => {
+
+    stopAutoRotate();
+
+});
+
+// BAŞLAT
+
+findImages();
+
+</script>
+
+</body>
+</html>
